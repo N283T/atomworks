@@ -142,6 +142,7 @@ def parse(
     convert_mse_to_met: bool = False,
     hydrogen_policy: Literal["keep", "remove", "infer"] = "keep",
     model: int | None = None,
+    altloc: Literal["first", "occupancy", "all"] = "first",
     build_assembly: Literal["first", "all"] | list[str] | tuple[str] | None = "all",
     extra_fields: list[str] | Literal["all"] | None = None,
     keep_cif_block: bool = False,
@@ -199,6 +200,9 @@ def parse(
             Defaults to "keep". Options: "keep", "remove", "infer".
         model (int, optional): The model number to parse for files with multiple models (e.g., NMR).
             Defaults to all models (None).
+        altloc (Literal["first", "occupancy", "all"], optional): Which alternate location to use for atoms with
+            multiple conformations. Options: "first" (alphabetically first altloc), "occupancy" (highest occupancy),
+            "all" (keep all). Defaults to "first".
         build_assembly (string, list, or tuple, optional): Specifies which assembly to build, if any. Options are None
             (e.g., asymmetric unit), "first", "all", or a list or tuple of assembly IDs. Defaults to "all".
         extra_fields (list, optional): A list of extra fields to include in the AtomArrayStack. Defaults to None. "all" includes all fields.
@@ -326,6 +330,7 @@ def parse(
             convert_mse_to_met=convert_mse_to_met,
             hydrogen_policy=hydrogen_policy,
             model=model,
+            altloc=altloc,
             build_assembly=build_assembly,
             extra_fields=extra_fields,
         )
@@ -345,6 +350,7 @@ def parse(
             convert_mse_to_met=convert_mse_to_met,
             hydrogen_policy=hydrogen_policy,
             model=model,
+            altloc=altloc,
             build_assembly=build_assembly,
             extra_fields=extra_fields,
             keep_cif_block=keep_cif_block,
@@ -636,9 +642,9 @@ def parse_atom_array(
 
     # ... build assemblies and add assembly-specific annotations (instance IDs like `chain_iid`, `pn_unit_iid`, `molecule_iid`)
     if exists(build_assembly):
-        assert build_assembly in ["first", "all"] or isinstance(
-            build_assembly, list | tuple
-        ), "Invalid `build_assembly` option. Must be 'first', 'all', or a list/tuple of assembly IDs as strings."
+        assert build_assembly in ["first", "all"] or isinstance(build_assembly, list | tuple), (
+            "Invalid `build_assembly` option. Must be 'first', 'all', or a list/tuple of assembly IDs as strings."
+        )
 
     # Determine assembly categories: use CIF data if build_assembly is set, otherwise identity operations
     if exists(build_assembly) and exists(_cif_file) and "pdbx_struct_assembly" in data_dict["cif_block"]:
@@ -727,6 +733,7 @@ def _parse_from_cif(filename: os.PathLike | io.StringIO | io.BytesIO, **kwargs) 
             cif_file,
             extra_fields=common_extra_fields,
             model=kwargs["model"],
+            altloc=kwargs["altloc"],
             add_bond_types_from_struct_conn=kwargs["add_bond_types_from_struct_conn"],
             fix_bond_types=kwargs["fix_bond_types"],
         )
@@ -737,12 +744,13 @@ def _parse_from_cif(filename: os.PathLike | io.StringIO | io.BytesIO, **kwargs) 
             cif_file,
             extra_fields=common_extra_fields,
             model=1,
+            altloc=kwargs["altloc"],
             add_bond_types_from_struct_conn=kwargs["add_bond_types_from_struct_conn"],
             fix_bond_types=kwargs["fix_bond_types"],
         )
 
     # process the asym_unit_stack according to the given keyword arguments
-    kwargs_to_pass = {k: v for k, v in kwargs.items() if k not in ["model", "file_type", "keep_cif_block"]}
+    kwargs_to_pass = {k: v for k, v in kwargs.items() if k not in ["model", "file_type", "keep_cif_block", "altloc"]}
     data_dict = parse_atom_array(asym_unit_stack, data_dict=data_dict, _cif_file=cif_file, **kwargs_to_pass)
 
     # Extract the asym_unit_stack from the returned data_dict
@@ -785,7 +793,7 @@ def _parse_from_pdb(filename: os.PathLike, **parse_from_cif_kwargs) -> dict[str,
     pdb_file = read_any(filename)
     atom_array_stack = pdb_file.get_structure(
         model=parse_from_cif_kwargs["model"],
-        altloc="first",
+        altloc=parse_from_cif_kwargs["altloc"],
         extra_fields=["b_factor", "occupancy", "charge", "atom_id"],
         include_bonds=True,
     )
@@ -822,7 +830,7 @@ def _parse_from_pdb(filename: os.PathLike, **parse_from_cif_kwargs) -> dict[str,
     # PDB files use identity assembly, so "all" builds just the single identity assembly
     parse_from_cif_kwargs["build_assembly"] = "all"
 
-    kwargs_to_pass = {k: v for k, v in parse_from_cif_kwargs.items() if k not in ["model", "file_type"]}
+    kwargs_to_pass = {k: v for k, v in parse_from_cif_kwargs.items() if k not in ["model", "file_type", "altloc"]}
     data_dict = parse_atom_array(atom_array_stack, _cif_file=None, **kwargs_to_pass)
     data_dict["metadata"]["id"] = Path(filename).stem.lower()
 
